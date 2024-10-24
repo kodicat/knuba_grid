@@ -230,34 +230,74 @@ HOST = config.settings['host']
 KEY = config.settings['key']
 DATABASE_ID = config.settings['database_id']
 
-def run():
-    client = CosmosClient(url=HOST, credential=KEY, connection_verify=False)
+# create item for cosmos db depending on the task
+def createItem(i):
+    id = i + 1
+    id_str = str(id)
+    tenantId = str(i // 100 + 1 )
+    obj = {
+        'tenantId': tenantId,
+        'id': id_str,
+        'productName': 'Widget' + id_str,
+        'productModel': 'Model' + id_str
+    }
+    return obj
 
+def createItemsInRange(max_index):
+    ids = range(0, max_index)
+    return list(map(lambda i: createItem(i), ids))
+
+def getOrCreateDatabase(client):
     try:
-        # setup database
-        try:
-            db = client.create_database(id=DATABASE_ID)
-            print('Database with id \'{0}\' created'.format(DATABASE_ID))
-        except exceptions.CosmosResourceExistsError:
-            db = client.get_database_client(DATABASE_ID)
-            print('Database with id \'{0}\' was found'.format(DATABASE_ID))
+        database = client.create_database(id=DATABASE_ID)
+        print('Database with id \'{0}\' created'.format(DATABASE_ID))
+    except exceptions.CosmosResourceExistsError:
+        database = client.get_database_client(DATABASE_ID)
+        print('Database with id \'{0}\' was found'.format(DATABASE_ID))
+    return database
 
-        # setup container
-        containerId = "container1"
-        try:
-            partitionKey = "id"
-            partitionKey = PartitionKey(path='/' + partitionKey)
-            container = db.create_container(id=containerId, partition_key=partitionKey)
-            print('Container with id \'{0}\' created'.format(containerId))
-        except exceptions.CosmosResourceExistsError:
-            container = db.get_container_client(containerId)
-            print('Container with id \'{0}\' was found'.format(containerId))
+def createContainer(database, container_name, partition_key):
+    container = None
+    try:
+        container = database.create_container(id=container_name, partition_key=partition_key)
+        print('Container with id \'{0}\' created'.format(container_name))
+    except exceptions.CosmosResourceExistsError:
+        container = database.get_container_client(container_name)
+        print('Container with id \'{0}\' was found'.format(container_name))
+    return container
 
-        # cleanup database
-        # try:
-        #     client.delete_database(db)
-        # except exceptions.CosmosResourceNotFoundError:
-        #     pass
+def cleanUpDatabase(client, database):
+    try:
+        client.delete_database(database)
+    except exceptions.CosmosResourceNotFoundError:
+        pass
+
+def upsert_items(container, items):
+    for item in items:
+        container.upsert_item(item)
+
+def run():
+    try:
+        client = CosmosClient(url=HOST, credential=KEY, connection_verify=False)
+        database = getOrCreateDatabase(client)
+
+        partition_key1 = PartitionKey(path='/id')
+        container_1_100 = createContainer(database, container_name="container_1_100", partition_key=partition_key1)
+        container_1_1000 = createContainer(database, container_name="container_1_1000", partition_key=partition_key1)
+
+        partition_key2 = PartitionKey(path=['/tenantId', '/id'], kind='MultiHash')
+        container_2_100 = createContainer(database, container_name="container_2_100", partition_key=partition_key2)
+        container_2_1000 = createContainer(database, container_name="container_2_1000", partition_key=partition_key2)
+
+        items_100 = createItemsInRange(100)
+        items_1000 = createItemsInRange(1000)
+
+        upsert_items(container_1_100, items_100)
+        upsert_items(container_1_1000, items_1000)
+        upsert_items(container_2_100, items_100)
+        upsert_items(container_2_1000, items_1000)
+
+        # check statistics???
 
     except exceptions.CosmosHttpResponseError as e:
         print('\n----Error. {0}'.format(e.message))
@@ -265,6 +305,7 @@ def run():
     finally:
             print("\n run() is done")
 
+    # cleanUpDatabase(client, database)
+
 if __name__ == '__main__':
-    # run_sample()
     run()
