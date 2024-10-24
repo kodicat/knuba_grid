@@ -1,0 +1,7 @@
+.DS_Store
+out
+log.log
+*.pyc
+.vs/
+bin/**
+obj/**

@@ -1,0 +1,16 @@
+services:
+  client:
+    container_name: client
+    build: ./client/.
+    volumes:
+      - ./client:/code
+    depends_on:
+      - cosmos
+
+  cosmos:
+    container_name: cosmos
+    image: "mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest"
+    ports:
+        - "8081:8081"
+        - "10250-10255:10250-10255"
+    
