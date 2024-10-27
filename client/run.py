@@ -2,9 +2,11 @@ import azure.cosmos.documents as doc
 import azure.cosmos.exceptions as exceptions
 import urllib3
 import config
+import json
 
 from azure.cosmos.cosmos_client import CosmosClient
 from azure.cosmos.partition_key import PartitionKey
+from azure.storage.blob import BlobServiceClient, ContainerClient, BlobPrefix
 
 # Initialize the Cosmos client
 connection_policy = doc.ConnectionPolicy()
@@ -13,9 +15,12 @@ connection_policy.DisableSSLVerification = "true"
 # disable ssl certificate warnings
 urllib3.disable_warnings()
 
-HOST = config.settings['host']
-KEY = config.settings['key']
-DATABASE_ID = config.settings['database_id']
+HOST = config.settings.get('host')
+KEY = config.settings.get('key')
+DATABASE_ID = config.settings.get('database_id')
+AZURE_BLOB_STORAGE_CONNECTION_STRING = config.settings.get('blob_storage_connection_string')
+AZURE_BLOB_STORAGE_NAME = config.settings.get('blob_storage_name')
+AZURE_BLOB_STORAGE_FILE_NAME = config.settings.get('blob_storage_file_name')
 
 def getOrCreateDatabase(client):
     try:
@@ -96,11 +101,26 @@ def run_container(container, items):
     insert_items(container, items)
     read_item(container, 'Widget99', 'Model99')
     read_all_items(container)
+    download_blob_and_save(container)
     print('----')
 
 def print_container_statistics(container):
     container_props = container.read()
     print('Container id: ', container_props.get('id'), ', partitionKey: ', container_props.get('partitionKey'), ', uniqueKeyPolicy: ', container_props.get('uniqueKeyPolicy'))
+
+def download_blob_from_storage(blob_storage_name, file_name):
+    blob_client = BlobServiceClient.from_connection_string(AZURE_BLOB_STORAGE_CONNECTION_STRING)
+    blob_container = next(filter(lambda x: x.name == blob_storage_name, blob_client.list_containers()))
+    blob_container_client = blob_client.get_container_client(container=blob_container.name)
+    blob_file_descriptor = next(filter(lambda x: x.name == file_name, blob_container_client.list_blobs()))
+    blob_file_client = blob_container_client.get_blob_client(blob=blob_file_descriptor.name)
+    return blob_file_client.download_blob().readall().decode('utf-8')
+
+def download_blob_and_save(container):
+    blob = download_blob_from_storage(blob_storage_name=AZURE_BLOB_STORAGE_NAME, file_name=AZURE_BLOB_STORAGE_FILE_NAME)
+    blob_json = json.loads(blob)
+    container.upsert_item(body=blob_json)
+    printLastRequestStatistics(container, 'Save blob file')
 
 def run():
     try:
